@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@plugin "tailwindcss-debug-screens";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --breakpoint-3xl: 110rem;
+  --breakpoint-4xl: 130rem;
+  --breakpoint-5xl: 160rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: #ededed;
+  }
+}
+
+html,
+body {
+  color: var(--foreground);
+  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  min-width: fit-content;
+  width: 100%;
+  height: 100%;
+}
+
+.dotted-bg {
+  background-image: radial-gradient(circle at center, black 1px, transparent 0);
+  background-size: 30px 30px;
+  background-repeat: repeat;
+}
