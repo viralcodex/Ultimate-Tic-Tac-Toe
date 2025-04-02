@@ -1,17 +1,14 @@
+import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-
+import { GameSession, Square, SelectedCell, InnerWinners, Board } from '../types/types'; // Import your types here
 //ultimate tic tac toe game store
 
-type Player = 'X' | 'O' | 'Draw';
-type Square = Player | null;
-type SelectedCell = {
-    outer: number | null;
-    inner: number | null;
-};
-type InnerWinners = Record<number, Player | null>; // Map outerCell index to the winning player
-type Board = Square[][];
 type Store = {
+    gameSession: GameSession | null;
+    setGameSession: (session: GameSession) => void;
+    socket: Socket | null;
+    setSocket: (socket: Socket | null) => void;
     selectedCell: SelectedCell;
     setSelectedCell: (outer: number | null, inner: number | null) => void;
     selectedCellHistory: number[];
@@ -44,6 +41,33 @@ const winningLines: number[][] = [
 ];
 
 const useGameStore = create<Store>()(devtools<Store>((set, get) => ({
+    gameSession: null,
+    setGameSession: (session: GameSession) => set({ gameSession: session }),
+    socket: null,
+    setSocket: (socket) => {
+        // if (typeof window === "undefined") return null;
+
+        // const { socket } = get();
+        // if (socket && socket.connected) {
+        //     console.log("Socket already initialized", socket.connected);
+        //     return socket; // Return the existing socket
+        // }
+
+        // const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL, {
+        //     transports: ["websocket"],
+        // });
+
+        // socketInstance.on("connect", () => {
+        //     console.log("Socket connected:", socketInstance.id);
+        // });
+
+        // socketInstance.on("connect_error", (error) => {
+        //     console.error("Socket connection error:", error);
+        // });
+
+        set({ socket: socket });
+        // return socketInstance; // Return the new socket instance
+    },
     selectedCell: { outer: null, inner: null },
     setSelectedCell: (outer, inner) => set((state) => {
         const newHistory = outer !== null
@@ -110,7 +134,7 @@ const useGameStore = create<Store>()(devtools<Store>((set, get) => ({
         }
 
         const updatedInnerWinners = get().innerWinners;
-        
+
         if (Object.keys(updatedInnerWinners).length >= 3) {
             for (const line of winningLines) {
                 const [a, b, c] = line;

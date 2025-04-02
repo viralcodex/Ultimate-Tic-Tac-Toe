@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { NavigationGuardProvider } from "next-navigation-guard";
+
 export const metadata: Metadata = {
   title: "Super Tic Tac Toe",
   description: "Built by Aviral Shukla",
@@ -24,7 +26,7 @@ export default function RootLayout({
         <title>My Webpage</title>
       </head>
       <body className="antialiased debug-screens bg-amber-400 dotted-bg w-full">
-        {children}
+      <NavigationGuardProvider>{children}</NavigationGuardProvider>
       </body>
     </html>
   );

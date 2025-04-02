@@ -12,10 +12,15 @@
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "lucide-react": "^0.479.0",
-    "next": "15.2.1",
+    "next": "^15.2.4",
+    "next-navigation-guard": "^0.1.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "tailwind-merge": "^3.0.2",
     "zustand": "^5.0.3"
   },
@@ -34,5 +39,13 @@
     "tailwindcss-debug-screens": "^3.0.1",
     "typescript": "^5",
     "vitest": "^3.0.9"
-  }
+  },
+  "main": "tailwind.config.js",
+  "directories": {
+    "test": "tests"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
 }
