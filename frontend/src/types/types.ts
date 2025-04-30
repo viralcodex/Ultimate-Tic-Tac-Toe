@@ -1,18 +1,26 @@
-
 "use server"
+
+type playerID = string;
+
+type PlayerInfo = {
+    playerName: string;
+    playerSymbol: Player;
+};
+
+type Players = Record<playerID, PlayerInfo>;
 
 type GameSession = {
     roomCode?: string | null;
-    playerName?: string | null;
-    playerSymbol?: Player | null;
+    players?: Players;
 };
-type Player = 'X' | 'O' | 'Draw'; //IMPORTANT
+
+type Player = 'X' | 'O' | 'Draw';
 type Square = Player | null;
 type SelectedCell = {
     outer: number | null;
     inner: number | null;
 };
-type InnerWinners = Record<number, Player | null>; // Map outerCell index to the winning player
+type InnerWinners = Record<number, Player | null>;
 type Board = Square[][];
 
-export type { GameSession, Player, Square, SelectedCell, InnerWinners, Board };
+export type { PlayerInfo, GameSession, Player, Square, SelectedCell, InnerWinners, Board, Players };
