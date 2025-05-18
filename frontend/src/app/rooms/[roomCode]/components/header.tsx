@@ -33,7 +33,7 @@ export default function Header() {
 
         {/* Icon on small screens */}
         <h1 className="sm:hidden text-white font-bold">
-          <Grid size={24} />
+          <Grid size={22} />
         </h1>
       </div>
 
@@ -51,7 +51,7 @@ export default function Header() {
         {/* Mobile menu button + dropdown (shown on small screens) */}
         <div className="sm:hidden relative">
           <button onClick={() => setMenuOpen(!menuOpen)} className="text-white">
-            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
           {menuOpen && (
             <div

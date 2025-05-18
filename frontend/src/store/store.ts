@@ -14,7 +14,7 @@ type Store = {
     setRecoveryTimeoutId: (id: NodeJS.Timeout | null) => void;
     gameSession: GameSession | null;
     setGameSession: (
-        session: GameSession | ((prev: GameSession | null) => GameSession | null)
+        session: Partial<GameSession> | ((prev: GameSession | null) => Partial<GameSession> | null)
     ) => void;
     resetGameSession: () => void;
     selectedCell: SelectedCell;
@@ -62,24 +62,34 @@ const useGameStore = create<Store>()(
                 recoveryTimeoutId: null,
                 setRecoveryTimeoutId: (id) => set({ recoveryTimeoutId: id }),
                 gameSession: null,
-                setGameSession: (session: GameSession | ((prev: GameSession | null) => GameSession)) =>
+                setGameSession: (update) => {
                     set((state) => {
-                        const prevSession = state.gameSession;
+                        const prev = state.gameSession;
 
-                        const updatedSession =
-                            typeof session === "function"
-                                ? session(prevSession)
-                                : {
-                                    ...prevSession,
-                                    ...session,
-                                    players: {
-                                        ...(prevSession?.players || {}),
-                                        ...(session.players || {}),
-                                    },
-                                };
+                        // 1) Distinguish functional vs object updates
+                        if (typeof update === 'function') {
+                            // Functional updater should return a full GameSession
+                            return { gameSession: update(prev) };
+                        }
 
-                        return { ...state, gameSession: updatedSession };
-                    }),
+                        // Object updater is treated as a “patch”
+                        const patch = update;
+
+                        // 2) Only merge players for patch updates—functional deletes shouldn’t be merged back
+                        const mergedPlayers = {
+                            ...(prev?.players || {}),
+                            ...(patch.players || {}),
+                        };
+
+                        return {
+                            gameSession: {
+                                // 3) Null-check instead of non-null assertion
+                                roomCode: patch.roomCode ?? prev?.roomCode ?? null,
+                                players: mergedPlayers,
+                            },
+                        };
+                    });
+                },
                 resetGameSession: (): void => set({ gameSession: null }),
                 selectedCell: { outer: null, inner: null },
                 setSelectedCell: (outer: number | null, inner: number | null): void => set((state) => {

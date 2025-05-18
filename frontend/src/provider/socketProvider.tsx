@@ -7,12 +7,18 @@ import React, {
   ReactNode,
   useContext,
   useState,
-  useRef,
 } from "react";
 import toast from "react-hot-toast";
-import * as src from "@/constants/constants";
 import useGameStore from "@/store/store";
 import { useRouter } from "next/navigation";
+import {
+  SOCKET_CONNECTED,
+  SOCKET_DISCONNECTED,
+  SOCKET_CONNECTION_ERROR,
+  RECOVERY_TIMER_STARTED,
+  RECOVERY_TIMEOUT,
+  ROOM_NOT_FOUND_ERROR,
+} from "@/constants/constants";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -26,13 +32,11 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
   children: React.ReactNode;
 }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const setGameSession = useGameStore((state) => state.setGameSession);
   const resetGameSession = useGameStore((state) => state.resetGameSession);
   const setIsInRoom = useGameStore((state) => state.setIsInRoom);
   const setRecoveryStartedAt = useGameStore(
     (state) => state.setRecoveryStartedAt
   );
-  const recoveryTimeoutId = useGameStore((state) => state.recoveryTimeoutId);
   const setRecoveryTimeoutId = useGameStore(
     (state) => state.setRecoveryTimeoutId
   );
@@ -60,9 +64,9 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
 
       const setupSocket = (socket: Socket | null) => {
         socket?.on("connect", () => {
-          console.log(src.SOCKET_CONNECTED, socket.id);
+          console.log(SOCKET_CONNECTED, socket.id);
           toast.remove();
-          toast.success(src.SOCKET_CONNECTED);
+          toast.success(SOCKET_CONNECTED);
         });
 
         socket?.on(
@@ -86,16 +90,18 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
 
         socket?.on("disconnect", () => {
           toast.remove();
-          toast.error(src.SOCKET_DISCONNECTED);
-          console.log(src.SOCKET_DISCONNECTED);
+          toast.error(SOCKET_DISCONNECTED);
+          console.log(SOCKET_DISCONNECTED);
+          setIsInRoom(false);
           resetGameSession(); // Reset the game session on disconnect
-          router.replace("/"); 
+          router.replace("/");
         });
 
         socket?.on("connect_error", (error) => {
           toast.remove();
-          toast.error(src.SOCKET_CONNECTION_ERROR + error.message);
-          console.log(src.SOCKET_CONNECTION_ERROR, error.message);
+          toast.error(SOCKET_CONNECTION_ERROR + error.message);
+          console.log(SOCKET_CONNECTION_ERROR, error.message);
+          setIsInRoom(false);
           router.replace("/");
         });
 
@@ -103,7 +109,7 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
         // It starts a recovery timer for 20 seconds (or whatever timeout you set on the server).
         // If the player rejoins within this time, they can continue playing. Otherwise, they are redirected to the home page.
         socket?.on("playerLeftAck", (roomCode: string) => {
-          console.log(src.RECOVERY_TIMER_STARTED);
+          console.log(RECOVERY_TIMER_STARTED);
           setIsInRoom(false);
           setRecoveryStartedAt(Date.now());
           // Start a client-side recovery timer matching the server's timeout.
@@ -112,9 +118,9 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
           setRecoveryTimeoutId(
             setTimeout(() => {
               if (socket.connected) {
-                console.log(src.SOCKET_DISCONNECTED);
+                console.log(SOCKET_DISCONNECTED);
                 toast.remove();
-                toast.error(src.SOCKET_DISCONNECTED);
+                toast.error(SOCKET_DISCONNECTED);
                 socket.auth = {}; // Clear session ID
                 socket.roomCode = null; // Clear room code
                 resetGameSession();
@@ -123,24 +129,12 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
                 setRecoveryTimeoutId(null); // Clear the timeout ID
                 router.replace("/");
               }
-            }, src.RECOVERY_TIMEOUT)
+            }, RECOVERY_TIMEOUT)
           ); // 20 seconds timeout
         });
 
-        // socket?.on("roomJoined", (roomCode: string, playerName: string) => {
-        //   //this root level event is used to clear recovery timer
-        //   setIsInRoom(true);
-        //   setRecoveryStartedAt(null);
-        //   const timeoutId = useGameStore.getState().recoveryTimeoutId;
-        //   if (timeoutId) {
-        //     clearTimeout(timeoutId);
-        //     setRecoveryTimeoutId(null);
-        //     console.log("Cleared recovery timeout on room join");
-        //   }
-        // });
-
         socket?.on("roomNotFound", (message: string) => {
-          console.log(src.ROOM_NOT_FOUND_ERROR, message);
+          console.log(ROOM_NOT_FOUND_ERROR, message);
           toast.remove();
           toast.error(message);
           resetGameSession();

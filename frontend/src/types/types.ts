@@ -1,19 +1,5 @@
 "use server"
 
-type playerID = string;
-
-type PlayerInfo = {
-    playerName: string;
-    playerSymbol: Player;
-};
-
-type Players = Record<playerID, PlayerInfo>;
-
-type GameSession = {
-    roomCode?: string | null;
-    players?: Players;
-};
-
 type Player = 'X' | 'O' | 'Draw';
 type Square = Player | null;
 type SelectedCell = {
@@ -23,4 +9,25 @@ type SelectedCell = {
 type InnerWinners = Record<number, Player | null>;
 type Board = Square[][];
 
-export type { PlayerInfo, GameSession, Player, Square, SelectedCell, InnerWinners, Board, Players };
+type playerID = string;
+
+type PlayerInfo = {
+    playerName: string;
+    playerSymbol: Player;
+};
+
+
+type GameSession = {
+    roomCode?: string | null;
+    players?: Record<playerID, PlayerInfo>;
+};
+
+type Response = {
+    id: string;
+    info: {
+        playerName: string;
+        playerSymbol: Player;
+    };
+}
+
+export type { PlayerInfo, GameSession, Player, Square, SelectedCell, InnerWinners, Board, Response };

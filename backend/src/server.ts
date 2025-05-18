@@ -4,6 +4,7 @@ import * as http from 'http';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import createInviteRoomCode from './utils/utils';
+import { RoomInfo, SessionInfo } from './types/types';
 
 const PORT = process.env.PORT || 4000;
 const TIMEOUT = 20000; // 20 seconds
@@ -22,29 +23,14 @@ app.get('/', (req, res) => {
     res.send('Server is running');
 });
 
-app.get('/rooms/:roomCode', (req, res) => {
-    res.json({ exists: rooms.has(req.params.roomCode) });
+app.get('/api/rooms/:roomCode/exists', (req, res) => {
+    const roomCode = req.params.roomCode;
+    if (rooms.has(roomCode)) {
+        res.sendStatus(200);
+    } else {
+        res.sendStatus(404);
+    }
 });
-
-type playerID = string;
-type playerName = string; // You can use a more complex type if needed
-
-interface PlayerInfo {
-    // playerID: playerID;
-    playerName: playerName;
-    playerSymbol?: string; // Optional: Store player symbol if needed
-}
-
-interface RoomInfo {
-    roomId: string;
-    cleanupTimeout?: NodeJS.Timeout | null;
-    players?: Record<playerID, PlayerInfo>; // Store player names or IDs if needed
-}
-
-interface SessionInfo {
-    playerInfo: Record<playerID, PlayerInfo>; // Store user info (playerID and playerName) (one record)
-    roomCode?: string; //if you want auto rejoin
-}
 
 const rooms: Map<string, RoomInfo> = new Map();
 const sessions: Map<string, SessionInfo> = new Map(); //based on the session ID, you can get the user ID and room code
@@ -72,7 +58,7 @@ io.use((sock, next) => {
             socket.playerID = Object.keys(session.playerInfo)[0]; // Get the first playerID from the session    
             socket.playerName = session.playerInfo[socket.playerID].playerName; // Optional: Store playerName if needed
             socket.roomCode = session.roomCode; // Store roomCode in socket for later use
-            console.log('Session found:', sessionID, session.playerInfo[socket.playerID], session.playerInfo[socket.playerID].playerName, "\n\n");
+            console.log('Session found:', sessionID, socket.playerID, session.playerInfo[socket.playerID].playerName, "\n\n");
             return next();
         }
     }
@@ -109,12 +95,6 @@ io.on('connection', (sock) => {
         playerID: socket.playerID,
     });
 
-    // Try auto-rejoin if roomCode is known
-    // if (socket.roomCode) {
-    //     console.log(socket.roomCode);
-    //     handleJoinRoom(socket, socket.roomCode, socket.playerName);
-    // }
-
     socket.on('rejoinRoom', (roomCode: string, playerName: string) => {
         if (socket.roomCode) {
             console.log(`Auto-rejoin requested for room ${socket.roomCode}`);
@@ -143,10 +123,13 @@ io.on('connection', (sock) => {
         if (oldRoomInfo) {
             console.log('User joined a new room, leaving old room');
 
+            // Inform other players in the room that a player has left the old room.
+            socket.to(oldRoomInfo.roomId).emit('someoneLeft', oldRoomCode, oldRoomInfo.players?.[socket.playerID]);
+            socket.emit('oldRoomDeleted', oldRoomCode);
             socket.leave(oldRoomInfo.roomId);
 
             // Inform other players in the old room.
-            socket.to(oldRoomInfo.roomId).emit('playerLeft', playerName, oldRoomCode);
+            // socket.to(oldRoomInfo.roomId).emit('playerLeft', playerName, oldRoomCode);
 
             // Check room size and cleanup if empty.
             const roomSize = io.sockets.adapter.rooms.get(oldRoomInfo.roomId)?.size || 0;
@@ -161,12 +144,13 @@ io.on('connection', (sock) => {
     // Handle player leaving
     socket.on('playerLeft', (roomCode: string, playerName: string) => {
         const roomInfo = rooms.get(roomCode);
+        console.log("roomInfo", roomCode, roomInfo);
         if (roomInfo && !roomInfo.cleanupTimeout) {
             console.log(`Player ${playerName} left room ${roomCode} \n`);
 
 
             // Inform other players in the room that a player has left.
-            socket.to(roomInfo.roomId).emit('someoneLeft', roomCode, roomInfo.players?.[socket.playerID]);
+            socket.to(roomInfo.roomId).emit('someoneLeft', roomCode, { id: socket.playerID, info: roomInfo.players?.[socket.playerID] });
 
             delete roomInfo.players?.[socket.playerID]; // Remove player from the room
 
@@ -231,16 +215,12 @@ function handleJoinRoom(socket: any, roomCode: string, playerName: string) {
         const isUserAlreadyInRoom = !!roomInfo.players?.[socket.playerID];
 
         if (!isUserAlreadyInRoom) {
-            if (!roomInfo.players) {
-                roomInfo.players = {};
-            }
+            roomInfo.players ||= {}; // Initialize players if undefined
             roomInfo.players[socket.playerID] = {
                 playerName: playerName,
                 playerSymbol: ''
             }; // Add player to the room
         }
-
-        socket.emit('sendCurrentPlayers', roomInfo.players);
 
         sessions.set(socket.sessionID, {
             playerInfo: {
@@ -254,11 +234,18 @@ function handleJoinRoom(socket: any, roomCode: string, playerName: string) {
 
         // Store roomCode in the session for recovery
 
-        // Notify other users that someone has joined the room 
-        socket.to(roomInfo.roomId).emit('newPlayerJoined', roomCode, roomInfo.players?.[socket.playerID]);
         socket.emit('roomJoined', roomCode, playerName);
+
+        socket.emit('sendCurrentPlayers', roomInfo.players); // Send current players in the room to the new player
+
+        // Notify other users that someone has joined the room 
+        socket.to(roomInfo.roomId).emit('newPlayerJoined', roomCode, { id: socket.playerID, info: roomInfo.players?.[socket.playerID] });
+
         console.log('User joined room:', roomCode, roomInfo.players, "\n");
-        logRoomSocketCount(roomCode);
+
+        logRoomSocketCount(roomCode); // Log current socket count for the room
+
+        console.log("Rooms:", rooms, "\n");
     } else {
         console.log('Room not found:', roomCode, "\n");
         socket.emit('roomNotFound', 'Room not found', roomCode, "\n");
