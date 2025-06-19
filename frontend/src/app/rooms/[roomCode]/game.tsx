@@ -4,7 +4,7 @@ import Grid from "./components/grid";
 import useGameStore from "@/store/store";
 import { useNavigationGuard } from "next-navigation-guard";
 import { toast } from "react-hot-toast";
-import { useRouter } from "next/navigation";
+import { redirect, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import LoadingGame from "./loading";
 import { useSocket } from "@/provider/socketProvider";
@@ -47,7 +47,8 @@ function Game(props: Readonly<{ roomCode: string }>) {
       if (window.confirm(CONFIRM_NAVIGATION_MESSAGE)) {
         console.log("player left");
         if (socket && socket.connected) {
-          const playerName = gameSession?.players?.[socket.userID]?.playerName;
+          const playerName =
+            gameSession?.players?.[socket.playerID]?.playerName;
           console.log(
             "inside",
             playerName,
@@ -116,7 +117,7 @@ function Game(props: Readonly<{ roomCode: string }>) {
     socket.on("newPlayerJoined", (roomCode: string, player: Response) => {
       console.log(NEW_PLAYER_JOINED, roomCode, player);
       toast.remove();
-      toast.success(NEW_PLAYER_JOINED + player.info.playerName);
+      toast.success(NEW_PLAYER_JOINED + player?.info?.playerName);
 
       setGameSession({
         players: {
@@ -205,9 +206,10 @@ function Game(props: Readonly<{ roomCode: string }>) {
   useEffect(() => {
     if (!socket || !isHydrated || hasAttemptedRecovery.current) return;
 
+    const playerName = gameSession?.players?.[socket.playerID]?.playerName;
+
     if (!isInRoom && recoveryStartedAt) {
       const timeElapsed = Date.now() - recoveryStartedAt;
-      const playerName = gameSession?.players?.[socket.userID]?.playerName;
 
       if (!playerName) {
         console.log("No player name found for recovery.");
@@ -235,12 +237,17 @@ function Game(props: Readonly<{ roomCode: string }>) {
       // });
     }
 
-    if (gameSession?.roomCode && gameSession.roomCode !== props.roomCode) {
-      toast.remove();
-      toast.error(ROOM_NOT_FOUND_ERROR);
-      router.replace("/");
-      resetGameSession();
-    }
+    console.log("PGS", playerName, socket.auth, gameSession?.roomCode);
+    // if (!playerName || !gameSession.roomCode || !socket.auth.sessionID) {
+    //   redirect("/");
+    // }
+
+    // if (gameSession?.roomCode && gameSession.roomCode !== props.roomCode) {
+    //   toast.remove();
+    //   toast.error(ROOM_NOT_FOUND_ERROR);
+    //   router.replace("/");
+    //   resetGameSession();
+    // }
 
     return () => {};
   }, [
@@ -268,13 +275,21 @@ function Game(props: Readonly<{ roomCode: string }>) {
   return (
     <div className="flex flex-col w-full h-full flex-1 align-middle justify-center relative">
       {
-      <div className="flex flex-row w-full lg:hidden items-center justify-between max-sm:py-5 sm:py-5">
+        <div className="flex flex-row w-full lg:hidden items-center justify-between max-sm:py-5 sm:py-5">
           {Object.entries(gameSession?.players || {}).map(
             ([key, player], index) =>
               index % 2 === 0 ? (
-                <PlayerTag key={key} text={player.playerName} className="w-45 rounded-r-3xl text-xl"/>
+                <PlayerTag
+                  key={key}
+                  text={player.playerName}
+                  className="w-45 rounded-r-3xl text-xl"
+                />
               ) : (
-                <PlayerTag key={key} text={player.playerName} className="w-45 rounded-l-3xl text-xl"/>
+                <PlayerTag
+                  key={key}
+                  text={player.playerName}
+                  className="w-45 rounded-l-3xl text-xl"
+                />
               )
           )}
         </div>
@@ -284,14 +299,22 @@ function Game(props: Readonly<{ roomCode: string }>) {
         {/* Desktop: Absolute buttons on the right, moves below when space is insufficient */}
         <div className="hidden lg:grid grid-col grid-cols-4 col-span-1 absolute w-full items-center justify-center">
           <div className="flex flex-col items-center justify-center col-start-1 lg:p-7 2xl:p-15 3xl:p-20 ">
-           {Object.entries(gameSession?.players || {}).map(
-            ([key, player], index) =>
-              index % 2 === 0 ? (
-                <PlayerTag key={key} text={player.playerName} className="w-full rounded-3xl mb-5"/>
-              ) : (
-                <PlayerTag key={key} text={player.playerName} className="w-full rounded-3xl"/>
-              )
-          )}
+            {Object.entries(gameSession?.players || {}).map(
+              ([key, player], index) =>
+                index % 2 === 0 ? (
+                  <PlayerTag
+                    key={key}
+                    text={player.playerName}
+                    className="w-full rounded-3xl mb-5"
+                  />
+                ) : (
+                  <PlayerTag
+                    key={key}
+                    text={player.playerName}
+                    className="w-full rounded-3xl"
+                  />
+                )
+            )}
           </div>
           <div className="flex flex-col col-start-4 lg:p-7 2xl:p-15 3xl:p-20">
             <Button

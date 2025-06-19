@@ -1,25 +1,46 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Button from "../rooms/[roomCode]/components/button";
 import useGameStore from "@/store/store";
-import { useRouter } from "next/navigation";
+import { redirect, useRouter } from "next/navigation";
 import { Socket } from "socket.io-client";
 import { Player, PlayerInfo } from "@/types/types";
 import { toast } from "react-hot-toast";
 import { Loader2Icon } from "lucide-react";
 import { useSocket } from "@/provider/socketProvider";
-import { ROOM_CREATED_SUCCESS, ROOM_CODE_COPIED, ROOM_CODE_LENGTH, ROOM_LENGTH_ERROR, ROOM_JOINED_SUCCESS, TITLE_ROOM_CODE, PLACEHOLDER_NAME, PLACEHOLDER_ROOM_CODE, BUTTON_CREATE_ROOM, BUTTON_JOIN_ROOM, BUTTON_PLAY_WITH_FRIEND, NAME_ERROR, BUTTON_PLAY_WITH_AI, PLAY_AI } from "@/constants/constants";
+import {
+  ROOM_CREATED_SUCCESS,
+  ROOM_CODE_COPIED,
+  ROOM_CODE_LENGTH,
+  ROOM_LENGTH_ERROR,
+  ROOM_JOINED_SUCCESS,
+  TITLE_ROOM_CODE,
+  PLACEHOLDER_NAME,
+  PLACEHOLDER_ROOM_CODE,
+  BUTTON_CREATE_ROOM,
+  BUTTON_JOIN_ROOM,
+  BUTTON_PLAY_WITH_FRIEND,
+  NAME_ERROR,
+  BUTTON_PLAY_WITH_AI,
+  PLAY_AI,
+  ROOM_CONFLICT_ERROR,
+} from "@/constants/constants";
 
 export default function LandingPage(props: Readonly<{ title: string }>) {
   const router = useRouter();
   const socket = useSocket();
   const [name, setName] = useState<string>("");
-  const [error, setError] = useState("");
+  const [roomCodeInput, setRoomCodeInput] = useState<string>(
+    useGameStore((state) => state.gameSession?.roomCode) || ""
+  );
+  const [error, setError] = useState<string>("");
   const [modalOptionSelected, setModalOptionSelected] = useState<number>(-1);
   const [isCreateLoading, setIsCreateLoading] = useState(false);
   const [isJoinLoading, setIsJoinLoading] = useState(false);
-  const roomCode = useGameStore((state) => state.gameSession?.roomCode || "");
+  const [isRoomConflicted, setIsRoomConflicted] = useState(false);
+
+  const roomCode = useGameStore((state) => state.gameSession?.roomCode) || "";
   const setIsInRoom = useGameStore((state) => state.setIsInRoom);
   const setGameSession = useGameStore((state) => state.setGameSession);
   const setRecoveryStartedAt = useGameStore(
@@ -29,13 +50,19 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
     (state) => state.setRecoveryTimeoutId
   );
 
+  useEffect(() => {
+    return () => {
+      socket?.offAny(); // Clear all socket listeners on unmount
+    };
+  }, [socket]);
+
   const setSocketAndCreateRoom = () => {
     if (!socket) return;
     setIsCreateLoading(true);
     if (!socket.connected) socket.connect();
     socket.emit("createRoom", name);
 
-    socket.once("roomCreated", (roomCode: string) => {
+    socket.on("roomCreated", (roomCode: string) => {
       console.log(ROOM_CREATED_SUCCESS, roomCode);
       navigator.clipboard.writeText(roomCode);
       toast.remove();
@@ -48,15 +75,15 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
     if (!socket) return;
     setIsJoinLoading(true);
 
-    const roomCode = useGameStore.getState().gameSession?.roomCode || "";
+    // const roomCode = useGameStore.getState().gameSession?.roomCode || "";
     console.log("Room code:", roomCode);
-    if (roomCode.length !== ROOM_CODE_LENGTH) {
+    if (roomCodeInput.length !== ROOM_CODE_LENGTH) {
       toast.remove();
       toast.error(ROOM_LENGTH_ERROR);
       setIsJoinLoading(false);
       return;
     }
-    joinRoom(socket, roomCode, "O");
+    joinRoom(socket, roomCodeInput, "O");
   };
 
   const joinRoom = (
@@ -65,31 +92,85 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
     player: Player
   ) => {
     if (!socket) return;
-    const oldRoomCode = useGameStore.getState().gameSession?.roomCode || "";
 
+    const oldRoomCode = useGameStore.getState().gameSession?.roomCode || "";
     console.log("old, new", oldRoomCode, roomCode);
 
-    if (oldRoomCode && oldRoomCode !== roomCode) { // If the user is already in a room and tries to join a new one
-      const timeoutId = useGameStore.getState().recoveryTimeoutId;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        setRecoveryTimeoutId(null);
-        console.log("Cleared recovery timeout on navigation cancel");
+    socket.on("alreadyInRoom", (roomCode: string, playerName: string) => {
+      toast.remove();
+      toast.error(
+        `You are already in room ${roomCode}. Close the tab/leave the room to join it again.`
+      );
+      console.log("Already in room", roomCode, playerName);
+      setIsJoinLoading(false);
+      redirect("/"); // Redirect to home page
+    });
+
+    socket.on(
+      "roomConflict",
+      (roomCode: string, playerName: string, playerInfo: PlayerInfo) => {
+        console.log("Room conflict detected", roomCode, playerName, playerInfo);
+        setIsRoomConflicted(true);
+        if (window.confirm(ROOM_CONFLICT_ERROR)) {
+          setIsRoomConflicted(false);
+          socket.emit("newRoomJoined", oldRoomCode, roomCode, playerName);
+          socket.once("oldRoomLeft", (newRoomCode: string) => {
+            console.log(
+              "(session persistence) Old room left to join new one: ",
+              newRoomCode
+            );
+            setGameSession({
+              roomCode: roomCode,
+              players: {
+                [socket.playerID]: {
+                  playerName: playerName,
+                  playerSymbol: player,
+                },
+              },
+            });
+          });
+        } else {
+          //User chose not to continue
+          toast.error("You have cancelled joining the room.");
+          setIsJoinLoading(false); // Reset loading state
+          setIsRoomConflicted(false); // Reset the conflict state
+          console.log("User cancelled joining the room");
+          socket.emit("cancelJoinRoom", roomCode, playerName);
+        }
       }
-      socket.emit("newRoomJoined", oldRoomCode, name);
-      socket.once("oldRoomDeleted", (oldRoom: string) => {
-        console.log("Old room deleted", oldRoom);
-        setGameSession({
-          roomCode: roomCode,
-          players: {
-            [socket.userID]: {
-              playerName: name,
-              playerSymbol: player,
-            },
-          },
-        });
-      });
+    );
+
+    //Don't allow joining a room if there is a conflict
+    if (isRoomConflicted) {
+      console.log("Room is conflicted, cannot join");
+      setIsRoomConflicted(false);
+      return;
     }
+
+    console.log("Joining room", roomCode, "as player", player);
+
+    // if (oldRoomCode && oldRoomCode !== roomCode) {
+    //   // If the user is already in a room and tries to join a new one
+    //   const timeoutId = useGameStore.getState().recoveryTimeoutId;
+    //   if (timeoutId) {
+    //     clearTimeout(timeoutId);
+    //     setRecoveryTimeoutId(null);
+    //     console.log("Cleared recovery timeout on navigation cancel");
+    //   }
+    //   socket.emit("newRoomJoined", oldRoomCode, name);
+    //   socket.once("oldRoomLeft", (oldRoom: string) => {
+    //     console.log("Old room left", oldRoom);
+    //     setGameSession({
+    //       roomCode: roomCode,
+    //       players: {
+    //         [socket.playerID]: {
+    //           playerName: name,
+    //           playerSymbol: player,
+    //         },
+    //       },
+    //     });
+    //   });
+    // }
 
     socket.emit("joinRoom", roomCode, name);
     socket.once("roomJoined", (roomCode: string, playerName: string) => {
@@ -97,11 +178,11 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
       setGameSession({
         roomCode: roomCode,
         players: {
-          [socket.userID]: {
+          [socket.playerID]: {
             playerName: playerName,
             playerSymbol: player,
           },
-        }
+        },
       });
       socket.on("sendCurrentPlayers", (players: Record<string, PlayerInfo>) => {
         console.log("current players in the room", players);
@@ -123,11 +204,12 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
       router.push(`/rooms/${roomCode}`);
     });
 
-    socket.once("roomNotFound", (message: string) => {
+    socket.on("roomNotFound", (message: string) => {
       toast.remove();
       toast.error(message);
       setIsJoinLoading(false);
       setIsInRoom(false);
+      router.replace("/");
     });
   };
 
@@ -157,13 +239,12 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
       ) : (
         <input
           type="text"
-          value={roomCode}
+          value={roomCodeInput}
           maxLength={ROOM_CODE_LENGTH}
           minLength={ROOM_CODE_LENGTH}
           onChange={(e) => {
-            setGameSession({
-              roomCode: e.target.value,
-            })
+            setRoomCodeInput(e.target.value);
+            if (error) setError(""); // Clear error on input change
           }}
           required
           className={`text-black text-lg 3xl:text-3xl border-4 rounded-lg p-2 my-5 text-center w-full ${

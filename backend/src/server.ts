@@ -4,7 +4,7 @@ import * as http from 'http';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import createInviteRoomCode from './utils/utils';
-import { RoomInfo, SessionInfo } from './types/types';
+import { RoomInfo, SessionInfo, PlayerInfo } from './types/types';
 
 const PORT = process.env.PORT || 4000;
 const TIMEOUT = 20000; // 20 seconds
@@ -53,21 +53,38 @@ io.use((sock, next) => {
     const sessionID = sock.handshake.auth.sessionID;
     if (sessionID) {
         const session = sessions.get(sessionID); // Use Map to get session info
-        if (session) {
+        if (session && session.isConnected) {
             socket.sessionID = sessionID;
             socket.playerID = Object.keys(session.playerInfo)[0]; // Get the first playerID from the session    
             socket.playerName = session.playerInfo[socket.playerID].playerName; // Optional: Store playerName if needed
             socket.roomCode = session.roomCode; // Store roomCode in socket for later use
-            console.log('Session found:', sessionID, socket.playerID, session.playerInfo[socket.playerID].playerName, "\n\n");
+
+            session.sockets ||= new Set(); // Ensure sockets is initialized
+            session.sockets.add(socket.id); // Add the current socket ID to the session's sockets set
+
+            console.log('Session found:', sessionID, socket.playerID, session.playerInfo[socket.playerID].playerName, "\n");
             return next();
         }
     }
 
+    // If no session found, create a new one
     socket.sessionID = uuidv4();
     socket.playerID = uuidv4();
     socket.roomCode = undefined; // Initialize roomCode as undefined
     socket.playerName = undefined; // Initialize playerName as undefined
     console.log('New session created:', socket.sessionID, socket.playerID, "\n\n");
+    //add new session to the sessions map
+    sessions.set(socket.sessionID, {
+        playerInfo: {
+            [socket.playerID]: {
+                playerName: '',
+                playerSymbol: '',
+            }
+        },
+        roomCode: undefined,
+        sockets: new Set([socket.id]), // Initialize sockets with the current socket ID
+        isConnected: true // Initialize connection status
+    });
 
     next();
 });
@@ -77,18 +94,18 @@ io.on('connection', (sock) => {
 
     const socket = sock as any; // Type assertion to access custom properties
 
-    sessions.set(
-        socket.sessionID,
-        {
-            playerInfo: {
-                [socket.playerID]: {
-                    playerName: '',
-                    playerSymbol: ''
-                }
-            },
-            roomCode: undefined
-        }
-    );
+    // sessions.set(socket.sessionID, {
+    //     playerInfo: {
+    //         [socket.playerID]: {
+    //             playerName: '',
+    //             playerSymbol: '',
+    //         }
+    //     },
+    //     roomCode: undefined,
+    //     sockets: new Set([socket.id]) // Initialize sockets with the current socket ID
+    // });
+
+    console.log("SESSIONS:", sessions, "\n");
 
     socket.emit("session", {
         sessionID: socket.sessionID,
@@ -116,16 +133,20 @@ io.on('connection', (sock) => {
         handleJoinRoom(socket, roomCode, playerName);
     });
 
+    socket.on('cancelJoinRoom', (roomCode: string, playerName: string) => {
+        console.log(`Join room cancelled for room ${roomCode} by player ${playerName}`);
+    });
+
     // Handle new room join (switching rooms)
-    socket.on('newRoomJoined', (oldRoomCode: string, playerName: string) => {
+    socket.on('newRoomJoined', (oldRoomCode: string, newRoomCode: string, playerName: string) => {
         const oldRoomInfo = rooms.get(oldRoomCode);
-        console.log('New room joined:', oldRoomCode, playerName);
+        console.log('New room joined:', newRoomCode, playerName);
         if (oldRoomInfo) {
-            console.log('User joined a new room, leaving old room');
+            console.log('User joined a new room, leaving old room', oldRoomInfo, '\n');
 
             // Inform other players in the room that a player has left the old room.
             socket.to(oldRoomInfo.roomId).emit('someoneLeft', oldRoomCode, oldRoomInfo.players?.[socket.playerID]);
-            socket.emit('oldRoomDeleted', oldRoomCode);
+            socket.emit('oldRoomLeft', newRoomCode);
             socket.leave(oldRoomInfo.roomId);
 
             // Inform other players in the old room.
@@ -182,17 +203,32 @@ io.on('connection', (sock) => {
     socket.on('disconnect', () => {
         console.log('Socket disconnected:', socket.id);
         // Delay to allow reconnections before scheduling cleanup.
-        setTimeout(() => {
-            Array.from(rooms.entries()).forEach(([roomCode, roomInfo]) => {
-                io.in(roomInfo.roomId).fetchSockets().then((sockets) => {
-                    console.log(`Room ${roomCode} has ${sockets.length} socket(s) after disconnection. \n`);
-                    if (sockets.length === 0) {
-                        scheduleRoomAndSessionCleanup(roomCode, roomInfo, socket);
-                    }
-                }).catch((error) => {
-                    console.error(`Error checking room ${roomCode}:`, error);
-                });
-            });
+        setTimeout(async () => {
+            const session = sessions.get(socket.sessionID);
+            session?.sockets?.delete(socket.id); // Remove the socket ID from the session's sockets set
+            if (session && session.sockets?.size == 0) {
+                session.isConnected = false; // Mark session as disconnected
+                sessions.set(socket.sessionID, session); // Update the session in the map
+            }
+            console.log("sessions2:", sessions, "\n");
+            const roomCode = socket.roomCode;
+            if (!roomCode) return;
+            const roomInfo = rooms.get(roomCode);
+            if (!roomInfo) return;
+
+            const player = roomInfo.players?.[socket.playerID];
+            if (player) {
+                console.log('Player disconnected:', player.playerName, socket.playerID);
+                delete roomInfo.players?.[socket.playerID]; // Remove player from the room
+            }
+            const sockets = await io.in(roomInfo.roomId).fetchSockets();
+            console.log(`Room ${roomCode} size after disconnect: ${sockets.length}`);
+            if (sockets.length === 0) {
+                console.log(`Room ${roomCode} is empty, scheduling cleanup \n`);
+                scheduleRoomAndSessionCleanup(roomCode, roomInfo, socket);
+            } else {
+                console.log(`Room ${roomCode} is not empty (${sockets.length} sockets), no cleanup needed \n`);
+            }
         }, 2000);
     });
 });
@@ -208,31 +244,81 @@ function handleJoinRoom(socket: any, roomCode: string, playerName: string) {
             console.log(`Cleanup timer cleared for room ${roomCode} \n`);
         }
 
-
-        socket.playerName = playerName; // Store player name in socket
-        socket.join(roomInfo.roomId);
-
-        const isUserAlreadyInRoom = !!roomInfo.players?.[socket.playerID];
-
-        if (!isUserAlreadyInRoom) {
-            roomInfo.players ||= {}; // Initialize players if undefined
-            roomInfo.players[socket.playerID] = {
-                playerName: playerName,
-                playerSymbol: ''
-            }; // Add player to the room
-        }
-
-        sessions.set(socket.sessionID, {
-            playerInfo: {
-                [socket.playerID]: {
-                    playerName: playerName,
-                    playerSymbol: ''
+        //check whether the player is already in that room
+        if (roomInfo.players?.[socket.playerID]) {
+            console.log(`Player ${playerName} is already in room ${roomCode}`);
+            const isValid = io.in(roomInfo.roomId).fetchSockets().then((sockets) => {
+                console.log("SOCKETS:", sockets, "\n");
+                const otherSocketsForSession = sockets.filter((s: any) => { return s.sessionID === socket.sessionID && s.id !== socket.id });
+                console.log(`Other sockets for session ${socket.sessionID}:`, otherSocketsForSession);
+                if (otherSocketsForSession.length > 0) {
+                    console.log(`Conflict: Player ${playerName} is already in room ${roomCode} via another tab`);
+                    socket.emit('alreadyInRoom', roomCode);
+                    return false; // Indicate that the player is already in the room vi another tab
                 }
-            },
-            roomCode: roomCode,
-        });
+                return true; // Indicate that the player can rejoin the room
+            })
 
+            if(!isValid) {
+                return;
+            }
+            console.log(`Allowing rejoin for ${playerName} in room ${roomCode} after disconnect/refresh`);
+            socket.join(roomInfo.roomId); // Join the room again
+            socket.emit('roomJoined', roomCode, playerName);
+            socket.emit('sendCurrentPlayers', roomInfo.players); // Send current players in the room to the rejoining player
+            return; 
+        }
+        
+        //check whether the player is already in another room
+        if (socket.roomCode && socket.roomCode !== roomCode) {
+            console.log(`Player ${playerName} is in another room ${socket.roomCode}, conflict with room ${roomCode}`);
+            socket.emit('roomConflict', roomCode, socket.roomCode);
+            return;
+        } 
+         
+        // add player to the room
+        roomInfo.players ||= {}; // Ensure players object exists
+        roomInfo.players[socket.playerID] = {
+            playerName: playerName,
+            playerSymbol: '' // Optional: Initialize player symbol if needed
+        };
+
+        console.log(`Player ${playerName} added to room ${roomCode} \n`);
+        
+        socket.join(roomInfo.roomId); // Join the room
+        
+        const session = sessions.get(socket.sessionID) || {
+            playerInfo: {},
+            roomCode: undefined,
+            sockets: new Set(),
+            isConnected: true // Ensure isConnected is included
+        };
+
+        (session.playerInfo as Record<string, PlayerInfo>)[socket.playerID] =
+        {
+            playerName: playerName,
+            playerSymbol: '' // Optional: Initialize player symbol if needed
+        };
+
+        session.roomCode = roomCode;
+        session.sockets?.add(socket.id);
+ 
+        sessions.set(socket.sessionID, session);
+
+        // sessions.set(socket.sessionID, {
+        //     playerInfo: {
+        //         [socket.playerID]: {
+        //             playerName: playerName,
+        //             playerSymbol: ''
+        //         }
+        //     },
+        //     roomCode: roomCode,
+        //     sockets: sessions?.get(socket.sessionID)?.sockets?.add(socket.id) // Store the socket ID in the session
+        // });
+        
         // Store roomCode in the session for recovery
+        socket.roomCode = roomCode;
+        socket.playerName = playerName; // Store player name in socket
 
         socket.emit('roomJoined', roomCode, playerName);
 
@@ -245,7 +331,8 @@ function handleJoinRoom(socket: any, roomCode: string, playerName: string) {
 
         logRoomSocketCount(roomCode); // Log current socket count for the room
 
-        console.log("Rooms:", rooms, "\n");
+        console.dir(rooms, { depth: null }); // Log current rooms for debugging
+        // console.log("Sessions:", sessions, "\n");
     } else {
         console.log('Room not found:', roomCode, "\n");
         socket.emit('roomNotFound', 'Room not found', roomCode, "\n");
@@ -259,7 +346,7 @@ const scheduleRoomAndSessionCleanup = (roomCode: string, roomInfo: RoomInfo, soc
             io.to(roomInfo.roomId).emit('disconnected', { message: 'Room to be closed in 20 seconds, rejoin to prevent losing progress' });
             rooms.delete(roomCode);
 
-            // Clear the cleanup timeout after room deletion
+            // Remove all sessions associated with this roomCode
             sessions.forEach((session, sessionID) => {
                 if (session.roomCode === roomCode) {
                     sessions.delete(sessionID);
@@ -282,4 +369,3 @@ const logRoomSocketCount = (roomCode: string) => {
         });
     }
 };
-

@@ -11,7 +11,6 @@ export default async function HomePage({
   params: Promise<{ roomCode: string }>;
 }) {
   const { roomCode } = await params;
-
   const isRoomCodeValid: boolean = await roomCodeExists(roomCode);
 
   if (!isRoomCodeValid) {

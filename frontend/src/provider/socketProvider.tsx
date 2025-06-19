@@ -84,7 +84,7 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
 
             localStorage.setItem("sessionID", sessionID); // Store sessionID in localStorage
 
-            socket.userID = playerID;
+            socket.playerID = playerID;
           }
         );
 
@@ -98,6 +98,8 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
         });
 
         socket?.on("connect_error", (error) => {
+          if (error.message === "Duplicate session detected") {
+          }
           toast.remove();
           toast.error(SOCKET_CONNECTION_ERROR + error.message);
           console.log(SOCKET_CONNECTION_ERROR, error.message);
