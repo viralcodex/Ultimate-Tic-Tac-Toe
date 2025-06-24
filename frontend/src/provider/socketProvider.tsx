@@ -7,6 +7,8 @@ import React, {
   ReactNode,
   useContext,
   useState,
+  use,
+  useRef,
 } from "react";
 import toast from "react-hot-toast";
 import useGameStore from "@/store/store";
@@ -18,6 +20,7 @@ import {
   RECOVERY_TIMER_STARTED,
   RECOVERY_TIMEOUT,
   ROOM_NOT_FOUND_ERROR,
+  ROOM_REJOINED_SUCCESS,
 } from "@/constants/constants";
 
 interface SocketContextType {
@@ -41,8 +44,16 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
     (state) => state.setRecoveryTimeoutId
   );
 
+  const gameSession = useGameStore((state) => state.gameSession);
+
   // const recoveryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
+
+   useEffect(() => {
+     if (useGameStore.persist.hasHydrated()) {
+       useGameStore.setState({ isHydrated: true });
+     }
+   }, []);
 
   useEffect(() => {
     if (!socket) {
@@ -81,10 +92,9 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
             console.log("Session ID:", sessionID);
             console.log("User ID:", playerID);
             socket.auth = { sessionID };
-
             localStorage.setItem("sessionID", sessionID); // Store sessionID in localStorage
-
-            socket.userID = playerID;
+            socket.playerID = playerID;
+            socket.emit("sessionCreated");
           }
         );
 
@@ -93,7 +103,8 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
           toast.error(SOCKET_DISCONNECTED);
           console.log(SOCKET_DISCONNECTED);
           setIsInRoom(false);
-          resetGameSession(); // Reset the game session on disconnect
+          socket.emit("playerLeft", gameSession?.roomCode || ""); // Notify server that player has left
+          // resetGameSession(); // Reset the game session on disconnection
           router.replace("/");
         });
 
@@ -102,6 +113,7 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
           toast.error(SOCKET_CONNECTION_ERROR + error.message);
           console.log(SOCKET_CONNECTION_ERROR, error.message);
           setIsInRoom(false);
+          resetGameSession(); // Reset the game session on connection error
           router.replace("/");
         });
 
@@ -160,6 +172,8 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({
       setRecoveryTimeoutId(null); // Clear the timeout ID when the component unmounts
     };
   }, [
+    gameSession?.players,
+    gameSession?.roomCode,
     resetGameSession,
     router,
     setIsInRoom,

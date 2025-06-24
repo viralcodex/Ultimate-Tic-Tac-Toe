@@ -8,6 +8,7 @@ export const ROOM_REJOINED_SUCCESS = "Room rejoined successfully!";
 export const ROOM_LEFT_SUCCESS = "Player left!";
 export const ROOM_NOT_FOUND_ERROR = "Room code invalid or expired, redirecting to home page...";
 export const ROOM_LENGTH_ERROR = "Room code must have 4 characters";
+export const ROOM_CONFLICT_ERROR =  "Joining another room while already in a room while remove you from the current one. Do you want to continue?";
 
 export const SOCKET_CONNECTED = "Socket connected successfully!";
 export const SOCKET_DISCONNECTED = "Socket disconnected";

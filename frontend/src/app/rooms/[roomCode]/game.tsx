@@ -47,7 +47,7 @@ function Game(props: Readonly<{ roomCode: string }>) {
       if (window.confirm(CONFIRM_NAVIGATION_MESSAGE)) {
         console.log("player left");
         if (socket && socket.connected) {
-          const playerName = gameSession?.players?.[socket.userID]?.playerName;
+          const playerName = gameSession?.players?.[socket.playerID]?.playerName;
           console.log(
             "inside",
             playerName,
@@ -78,29 +78,39 @@ function Game(props: Readonly<{ roomCode: string }>) {
 
   //try to rejoin the room if the socket is connected and the user is not in a room
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !isHydrated) return;
 
-    socket.on("connect", () => {
-      socket.emit("rejoinRoom", (roomCode: string, playerName: string) => {
-        console.log(ROOM_REJOINED_SUCCESS, roomCode, playerName);
-        toast.remove();
-        toast.success(ROOM_REJOINED_SUCCESS);
-        setIsInRoom(true);
-        setRecoveryStartedAt(null);
-        const timeoutId = useGameStore.getState().recoveryTimeoutId;
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          setRecoveryTimeoutId(null);
-          console.log("Cleared recovery timeout on room join");
+    socket.on("afterSessionCreated", () => {
+      const roomCode = props.roomCode;
+      const playerName = gameSession?.players?.[socket.playerID]?.playerName;
+      console.log("afterSessionCreated", roomCode, playerName);
+      socket.emit(
+        "rejoinRoom",
+        roomCode,
+        playerName,
+        (roomCode: string, playerName: string) => {
+          console.log(ROOM_REJOINED_SUCCESS, roomCode, playerName);
+          toast.remove();
+          toast.success(ROOM_REJOINED_SUCCESS);
+          setIsInRoom(true);
+          setRecoveryStartedAt(null);
+          const timeoutId = useGameStore.getState().recoveryTimeoutId;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            setRecoveryTimeoutId(null);
+            console.log("Cleared recovery timeout on room join");
+          }
         }
-      });
+      );
     });
 
     return () => {
-      // socket.off("sendCurrentPlayers");
-      socket.off("connect");
+      socket.off("afterSession");
     };
   }, [
+    gameSession?.players,
+    isHydrated,
+    props.roomCode,
     setGameSession,
     setIsInRoom,
     setRecoveryStartedAt,
@@ -207,7 +217,7 @@ function Game(props: Readonly<{ roomCode: string }>) {
 
     if (!isInRoom && recoveryStartedAt) {
       const timeElapsed = Date.now() - recoveryStartedAt;
-      const playerName = gameSession?.players?.[socket.userID]?.playerName;
+      const playerName = gameSession?.players?.[socket.playerID]?.playerName;
 
       if (!playerName) {
         console.log("No player name found for recovery.");

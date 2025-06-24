@@ -16,4 +16,3 @@ Play with AI, play with friends, and enjoy anytime anywhere.
 
 
 
-

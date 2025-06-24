@@ -16,6 +16,13 @@ interface RoomInfo {
 interface SessionInfo {
     playerInfo: Record<PlayerID, PlayerInfo>; // Store user info (playerID and playerName) (one record)
     roomCode?: string; //if you want auto rejoin
+    sockets: Set<string> | undefined; // Store socket IDs of the same player joining the room multiple times
+    isConnected: boolean; // Store connection status
 }
 
-export type {RoomInfo, SessionInfo };
+interface Response {
+    id: string;
+    info: PlayerInfo;
+}
+
+export type { RoomInfo, SessionInfo, PlayerInfo, Response };

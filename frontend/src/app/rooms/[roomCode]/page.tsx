@@ -4,6 +4,7 @@ import Game from "./game";
 import Header from "./components/header";
 import { notFound } from "next/navigation";
 import { roomCodeExists } from "@/app/utils/utils";
+import { Socket } from "socket.io";
 
 export default async function HomePage({
   params,

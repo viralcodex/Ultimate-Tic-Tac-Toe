@@ -65,6 +65,8 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
     player: Player
   ) => {
     if (!socket) return;
+
+    socket.roomCode = roomCode || "";
     const oldRoomCode = useGameStore.getState().gameSession?.roomCode || "";
 
     console.log("old, new", oldRoomCode, roomCode);
@@ -82,7 +84,7 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
         setGameSession({
           roomCode: roomCode,
           players: {
-            [socket.userID]: {
+            [socket.playerID]: {
               playerName: name,
               playerSymbol: player,
             },
@@ -97,7 +99,7 @@ export default function LandingPage(props: Readonly<{ title: string }>) {
       setGameSession({
         roomCode: roomCode,
         players: {
-          [socket.userID]: {
+          [socket.playerID]: {
             playerName: playerName,
             playerSymbol: player,
           },

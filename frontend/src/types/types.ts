@@ -24,10 +24,7 @@ type GameSession = {
 
 type Response = {
     id: string;
-    info: {
-        playerName: string;
-        playerSymbol: Player;
-    };
+    info: PlayerInfo;
 }
 
 export type { PlayerInfo, GameSession, Player, Square, SelectedCell, InnerWinners, Board, Response };
